@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Training Logs</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <nav>
+        <a href="/">Game</a>
+        <a href="howto.html">How To</a>
+        <a href="logs.html">Logs</a>
+    </nav>
+    <main>
+        <h1>Training Logs</h1>
+        <p>Here are your daily training results. Each entry shows the weight and reps for both hands. You can filter the view or delete an entry if needed.</p>
+        <div id="logControls">
+            <label><input type="checkbox" id="filterStrength" checked> Strength</label>
+            <label><input type="checkbox" id="filterEndurance" checked> Endurance</label>
+        </div>
+        <table id="logTable">
+            <thead>
+                <tr>
+                    <th id="thDate">Date</th>
+                    <th>Mode</th>
+                    <th>Right (lbs/reps)</th>
+                    <th>Left (lbs/reps)</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Rows inserted by script -->
+            </tbody>
+        </table>
+        <canvas id="progressChart" width="600" height="400"></canvas>
+        <p id="noLogsMessage" class="hidden">No logs to display yet.</p>
+    </main>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        const tbody = document.querySelector('#logTable tbody');
+        const noLogsMsg = document.getElementById('noLogsMessage');
+        const filterStrengthCb = document.getElementById('filterStrength');
+        const filterEnduranceCb = document.getElementById('filterEndurance');
+        let logData = [];
+        // Fetch logs data from server
+        fetch('/api/logs')
+            .then(response => response.json())
+            .then(data => {
+                logData = data;
+                if (!data || data.length === 0) {
+                    noLogsMsg.classList.remove('hidden');
+                    return;
+                }
+                populateTable();
+                renderChart();
+            });
+        function populateTable() {
+            // Sort by date descending
+            logData.sort((a, b) => (a.date < b.date ? 1 : -1));
+            tbody.innerHTML = "";
+            logData.forEach(entry => {
+                const tr = document.createElement('tr');
+                tr.setAttribute('data-mode', entry.mode);
+                const dateTd = document.createElement('td');
+                dateTd.textContent = entry.date;
+                const modeTd = document.createElement('td');
+                modeTd.textContent = entry.mode.charAt(0).toUpperCase() + entry.mode.slice(1);
+                const rightTd = document.createElement('td');
+                rightTd.textContent = entry.right_weight + " lbs / " + entry.right_reps;
+                const leftTd = document.createElement('td');
+                leftTd.textContent = entry.left_weight + " lbs / " + entry.left_reps;
+                const deleteTd = document.createElement('td');
+                deleteTd.innerHTML = `<button class="deleteBtn" data-date="${entry.date}">&times;</button>`;
+                tr.appendChild(dateTd);
+                tr.appendChild(modeTd);
+                tr.appendChild(rightTd);
+                tr.appendChild(leftTd);
+                tr.appendChild(deleteTd);
+                tbody.appendChild(tr);
+            });
+        }
+        // Apply filter based on mode checkboxes
+        function applyFilter() {
+            const showStrength = filterStrengthCb.checked;
+            const showEndurance = filterEnduranceCb.checked;
+            const rows = tbody.querySelectorAll('tr');
+            rows.forEach(row => {
+                const mode = row.getAttribute('data-mode');
+                if ((mode === "strength" && !showStrength) || (mode === "endurance" && !showEndurance)) {
+                    row.classList.add('hidden');
+                } else {
+                    row.classList.remove('hidden');
+                }
+            });
+        }
+        filterStrengthCb.addEventListener('change', applyFilter);
+        filterEnduranceCb.addEventListener('change', applyFilter);
+        // Delete log entry
+        tbody.addEventListener('click', (e) => {
+            if (e.target.classList.contains('deleteBtn')) {
+                const date = e.target.getAttribute('data-date');
+                if (!confirm(`Delete log for ${date}?`)) return;
+                fetch(`/api/delete?date=${date}`, { method: 'DELETE' })
+                    .then(response => response.json())
+                    .then(result => {
+                        if (result.status === 'ok') {
+                            logData = logData.filter(entry => entry.date !== date);
+                            populateTable();
+                            renderChart();
+                            if (logData.length === 0) {
+                                noLogsMsg.classList.remove('hidden');
+                            }
+                        }
+                    });
+            }
+        });
+        // Render progress chart using Chart.js
+        function renderChart() {
+            const ctx = document.getElementById('progressChart').getContext('2d');
+            if (!logData || logData.length === 0) {
+                return;
+            }
+            // Prepare data series
+            const labels = [];
+            const Rstrength = [], Lstrength = [], Rendurance = [], Lendurance = [];
+            const sortedByDate = [...logData].sort((a, b) => (a.date > b.date ? 1 : -1));
+            sortedByDate.forEach(entry => {
+                labels.push(entry.date);
+            });
+            const uniqueLabels = [...new Set(labels)];
+            uniqueLabels.forEach(() => {
+                Rstrength.push(null);
+                Lstrength.push(null);
+                Rendurance.push(null);
+                Lendurance.push(null);
+            });
+            uniqueLabels.forEach((date, index) => {
+                const entry = logData.find(e => e.date === date);
+                if (!entry) return;
+                if (entry.mode === "strength") {
+                    Rstrength[index] = entry.right_weight;
+                    Lstrength[index] = entry.left_weight;
+                } else if (entry.mode === "endurance") {
+                    Rendurance[index] = entry.right_weight;
+                    Lendurance[index] = entry.left_weight;
+                }
+            });
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: uniqueLabels,
+                    datasets: [
+                        {
+                            label: 'Right Strength (lbs)',
+                            data: Rstrength,
+                            borderColor: 'red',
+                            backgroundColor: 'red',
+                            spanGaps: true,
+                            fill: false
+                        },
+                        {
+                            label: 'Left Strength (lbs)',
+                            data: Lstrength,
+                            borderColor: 'orange',
+                            backgroundColor: 'orange',
+                            spanGaps: true,
+                            fill: false
+                        },
+                        {
+                            label: 'Right Endurance (lbs)',
+                            data: Rendurance,
+                            borderColor: 'blue',
+                            backgroundColor: 'blue',
+                            spanGaps: true,
+                            fill: false
+                        },
+                        {
+                            label: 'Left Endurance (lbs)',
+                            data: Lendurance,
+                            borderColor: 'green',
+                            backgroundColor: 'green',
+                            spanGaps: true,
+                            fill: false
+                        }
+                    ]
+                },
+                options: {
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Date'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Weight (lbs)'
+                            },
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>

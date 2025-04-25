@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How to Use Grip Training Game</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <nav>
+        <a href="/">Game</a>
+        <a href="howto.html">How To</a>
+        <a href="logs.html">Logs</a>
+    </nav>
+    <main>
+        <h1>How to Use the Grip Strength Training Game</h1>
+        <section>
+            <h2>Overview</h2>
+            <p>This game makes grip training fun by using a Flappy Bird-style game. You control a bird by squeezing a special grip device. The goal is to improve your grip strength and endurance over time!</p>
+        </section>
+        <section>
+            <h2>Initial Setup</h2>
+            <p>Before you start playing, we need to set the right difficulty for you. We'll calculate the training weights for strength (heavy, ~10 reps) and endurance (light, ~20 reps) modes for each hand.</p>
+            <ol>
+                <li>Make sure your grip device is connected to the computer.</li>
+                <li>Enter your name (so the game can cheer you on by name!).</li>
+                <li>For each hand, perform a quick test:
+                    <ul>
+                        <li><strong>Strength test:</strong> Try a heavy resistance and count how many reps you can do. Enter that weight and rep count.</li>
+                        <li><strong>Endurance test:</strong> Use a lighter resistance and see how many reps you can do (aim for more than 10). Enter that weight and reps.</li>
+                    </ul>
+                    <p>If you're not sure, you can guess or use a default (e.g., 3 lbs for endurance).</p>
+                </li>
+                <li>Click "Calculate" to see the recommended training weights.</li>
+                <li>If it looks good, click "Save &amp; Start Training" to save and begin!</li>
+            </ol>
+            <form id="setupForm" onsubmit="return false;">
+                <div class="form-group">
+                    <label for="playerName">Player Name:</label>
+                    <input type="text" id="playerName" name="playerName" placeholder="Your name" />
+                </div>
+                <h3>Right Hand</h3>
+                <div class="form-group">
+                    <label>Strength test:</label>
+                    <input type="number" id="R_str_reps" min="1" placeholder="reps"> reps at 
+                    <input type="number" id="R_str_wt" min="1" step="0.1" placeholder="lbs"> lbs
+                </div>
+                <div class="form-group">
+                    <label>Endurance test:</label>
+                    <input type="number" id="R_end_reps" min="1" placeholder="reps"> reps at 
+                    <input type="number" id="R_end_wt" min="1" step="0.1" placeholder="lbs"> lbs
+                </div>
+                <h3>Left Hand</h3>
+                <div class="form-group">
+                    <label>Strength test:</label>
+                    <input type="number" id="L_str_reps" min="1" placeholder="reps"> reps at 
+                    <input type="number" id="L_str_wt" min="1" step="0.1" placeholder="lbs"> lbs
+                </div>
+                <div class="form-group">
+                    <label>Endurance test:</label>
+                    <input type="number" id="L_end_reps" min="1" placeholder="reps"> reps at 
+                    <input type="number" id="L_end_wt" min="1" step="0.1" placeholder="lbs"> lbs
+                </div>
+                <button type="button" id="calcBtn">Calculate</button>
+                <button type="button" id="saveBtn" disabled>Save &amp; Start Training</button>
+            </form>
+            <div id="results" class="hidden">
+                <h3>Recommended Training Weights:</h3>
+                <ul id="recommendList">
+                    <!-- Filled by script -->
+                </ul>
+            </div>
+        </section>
+        <section>
+            <h2>How to Play</h2>
+            <p>Each day, the game will automatically switch between <strong>Strength</strong> and <strong>Endurance</strong> mode to train both aspects of your grip. It also alternates hands: you'll always do your right hand first, then left hand.</p>
+            <p>In the game, your bird needs to fly through gaps in pipes. To make the bird fly up, <strong>squeeze the grip</strong>! If you don't squeeze in time, the bird will fall or hit a pipe.</p>
+            <p>Your goal in strength mode is to get 10 flaps (reps) without failing. In endurance mode, the goal is 20 flaps. If you reach the goal, the weight will increase a bit next time. If you can't, the weight will decrease slightly to help you succeed.</p>
+            <p>The game will show a countdown before each round and even say encouraging phrases like "Great job!" or "You got this!" to keep you motivated. Try your best to meet the goal reps!</p>
+            <p>After finishing with the right hand, take a short break, then you'll do the left hand. When both hands are done, you're finished for the day. Check the Logs page to see your progress over time on a nice chart!</p>
+            <p>Have fun and get stronger each day!</p>
+        </section>
+    </main>
+    <script>
+    // Rep-max calculation script
+    const calcBtn = document.getElementById('calcBtn');
+    const saveBtn = document.getElementById('saveBtn');
+    const recommendList = document.getElementById('recommendList');
+    const resultsDiv = document.getElementById('results');
+    let recommended = {};
+    function estimateTargetWeight(w, r, targetReps) {
+        // Use Epley formula to estimate 1RM, then weight for target reps
+        const oneRM = w * (1 + r / 30.0);
+        const target = oneRM / (1 + targetReps / 30.0);
+        return Math.max(1, Math.floor(target));
+    }
+    calcBtn.addEventListener('click', () => {
+        // Read inputs
+        const name = document.getElementById('playerName').value.trim();
+        const Rsr = parseInt(document.getElementById('R_str_reps').value);
+        const Rsw = parseFloat(document.getElementById('R_str_wt').value);
+        const Rer = parseInt(document.getElementById('R_end_reps').value);
+        const Rew = parseFloat(document.getElementById('R_end_wt').value);
+        const Lsr = parseInt(document.getElementById('L_str_reps').value);
+        const Lsw = parseFloat(document.getElementById('L_str_wt').value);
+        const Ler = parseInt(document.getElementById('L_end_reps').value);
+        const Lew = parseFloat(document.getElementById('L_end_wt').value);
+        if (!Rsr || !Rsw || !Rer || !Rew || !Lsr || !Lsw || !Ler || !Lew) {
+            alert("Please fill in all fields with numbers.");
+            return;
+        }
+        // Calculate recommended weights
+        const R_strength = estimateTargetWeight(Rsw, Rsr, 10);
+        const R_endurance = estimateTargetWeight(Rew, Rer, 20);
+        const L_strength = estimateTargetWeight(Lsw, Lsr, 10);
+        const L_endurance = estimateTargetWeight(Lew, Ler, 20);
+        recommended = {
+            name: name,
+            max_strength_R: R_strength,
+            max_endurance_R: R_endurance,
+            max_strength_L: L_strength,
+            max_endurance_L: L_endurance
+        };
+        // Display results
+        recommendList.innerHTML = `
+            <li>Right Hand - Strength: ${R_strength} lbs</li>
+            <li>Right Hand - Endurance: ${R_endurance} lbs</li>
+            <li>Left Hand - Strength: ${L_strength} lbs</li>
+            <li>Left Hand - Endurance: ${L_endurance} lbs</li>
+        `;
+        resultsDiv.classList.remove('hidden');
+        saveBtn.disabled = false;
+    });
+    saveBtn.addEventListener('click', () => {
+        if (!recommended || Object.keys(recommended).length === 0) {
+            return;
+        }
+        fetch('/api/saveConfig', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(recommended)
+        }).then(response => response.json())
+          .then(data => {
+            if (data.status === 'ok') {
+                // Redirect to game page to start training
+                window.location.href = "/";
+            } else {
+                alert("Error saving configuration.");
+            }
+          });
+    });
+    </script>
+</body>
+</html>

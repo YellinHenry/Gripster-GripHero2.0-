@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grip Training Game</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Navigation bar -->
+    <nav>
+        <a href="/">Game</a>
+        <a href="howto.html">How To</a>
+        <a href="logs.html">Logs</a>
+    </nav>
+    <main>
+        <!-- Session info label will display current mode, weight, and hand -->
+        <h2 id="sessionLabel"></h2>
+        <!-- Game container with canvas and overlay for messages -->
+        <div id="game-container">
+            <canvas id="gameCanvas" width="800" height="400"></canvas>
+            <!-- Overlay for countdowns and between-hand messages -->
+            <div id="overlay" class="overlay hidden"></div>
+            <!-- Motivational text display (non-blocking) -->
+            <div id="motivation" class="motivation hidden"></div>
+        </div>
+    </main>
+    <script>
+        // Game and training parameters
+        const gravity = 0.3; // gravity acceleration (pixels per frame^2)
+        const jumpVelocity = -9; // increased upward velocity for higher jumps
+        const pipeSpeed = 2; // horizontal pipe speed (pixels per frame)
+        const pipeInterval = 180; // frames between generating pipes (~3 seconds at 60fps)
+        // These will be set from server data:
+        let currentMode = null; // "strength" or "endurance"
+        let currentHand = "right"; // "right" or "left"
+        let targetReps = 0;
+        let targetWeight = 0;
+        let playerName = ""; // player name for messages (if set)
+        // Game state variables
+        let frameCount = 0;
+        let birdY = 0;
+        let birdV = 0;
+        let birdX = 100; // fixed horizontal position of bird
+        let pipes = []; // array of pipe objects {x, height, passed}
+        let repsDone = 0;
+        let gameActive = false;
+        let isJumping = false;
+        // Canvas context
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        // DOM elements
+        const sessionLabel = document.getElementById('sessionLabel');
+        const overlay = document.getElementById('overlay');
+        const motivationDiv = document.getElementById('motivation');
+        
+        // Draw background (sky and ground)
+        function drawBackground() {
+            ctx.fillStyle = "#87CEEB"; // sky blue
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = "#8B4513"; // ground brown
+            ctx.fillRect(0, canvas.height - 20, canvas.width, 20);
+        }
+        
+        // Draw the bird (a simple circle) - now positioned on the ground when not jumping
+        function drawBird() {
+            ctx.fillStyle = "#FFD700"; // golden/yellow
+            ctx.beginPath();
+            ctx.arc(birdX, birdY, 10, 0, 2 * Math.PI);
+            ctx.fill();
+        }
+        
+        // Draw all pipes - now they're obstacles on the ground
+        function drawPipes() {
+            ctx.fillStyle = "#228B22"; // green pipes
+            pipes.forEach(pipe => {
+                // Draw pipes as ground obstacles
+                ctx.fillRect(pipe.x, canvas.height - 20 - pipe.height, 25, pipe.height);
+            });
+        }
+        
+        // Create a new pipe with a random height
+        function createPipe() {
+            const minHeight = 30;
+            const maxHeight = 60;
+            const height = Math.random() * (maxHeight - minHeight) + minHeight;
+            pipes.push({ x: canvas.width, height: height, passed: false });
+        }
+        
+        // Game loop: update physics and check collisions
+        function updateGame() {
+            frameCount++;
+            
+            // Apply gravity to bird when jumping
+            if (birdY < canvas.height - 30) {
+                birdV += gravity;
+                birdY += birdV;
+            } else {
+                // Bird is on the ground
+                birdY = canvas.height - 30;
+                birdV = 0;
+                isJumping = false;
+            }
+            
+            // Spawn pipes at intervals
+            if (frameCount % pipeInterval === 0) {
+                createPipe();
+            }
+            
+            // Move pipes and check collisions/passes
+            for (let i = 0; i < pipes.length; i++) {
+                const pipe = pipes[i];
+                pipe.x -= pipeSpeed;
+                
+                // Check if bird passed this pipe (bird's x is beyond pipe)
+                if (!pipe.passed && pipe.x + 25 < birdX) {
+                    pipe.passed = true;
+                    repsDone++;
+                    // Check for reaching target reps
+                    if (repsDone >= targetReps) {
+                        endGame(true);
+                        return;
+                    }
+                    // Mid-point motivational phrases
+                    if (currentMode === "strength" && repsDone === 5) {
+                        showMotivation("Keep it up!");
+                        speakPhrase("Keep going " + (playerName ? playerName : "you") + "!");
+                    } else if (currentMode === "endurance" && repsDone === 10) {
+                        showMotivation("Halfway there!");
+                        speakPhrase("Halfway there " + (playerName ? playerName : "") + "!");
+                    }
+                }
+                
+                // Check collision with pipe (when bird is near pipe and not high enough to clear it)
+                if (birdX + 10 > pipe.x && birdX - 10 < pipe.x + 25) {
+                    if (birdY + 10 > canvas.height - 20 - pipe.height) {
+                        endGame(false);
+                        return;
+                    }
+                }
+            }
+            
+            // Remove pipes that have gone off screen
+            if (pipes.length && pipes[0].x < -50) {
+                pipes.shift();
+            }
+            
+            // Render updated frame
+            drawBackground();
+            drawPipes();
+            drawBird();
+        }
+        
+        // Start the continuous game loop
+        function startGameLoop() {
+            gameActive = true;
+            // Initialize bird and environment - bird starts on the ground
+            birdY = canvas.height - 30;
+            birdV = 0;
+            repsDone = 0;
+            pipes = [];
+            frameCount = 0;
+            isJumping = false;
+            // Place an initial pipe somewhat ahead to start
+            pipes.push({ x: canvas.width * 0.6, height: 40, passed: false });
+            // Use requestAnimationFrame for smooth loop
+            function loop() {
+                if (!gameActive) return;
+                updateGame();
+                requestAnimationFrame(loop);
+            }
+            requestAnimationFrame(loop);
+        }
+        
+        // Jump function for the bird
+        function jump() {
+            if (!isJumping && gameActive) {
+                birdV = jumpVelocity;
+                isJumping = true;
+            }
+        }
+        
+        // End the game and display result overlay
+        function endGame(success) {
+            gameActive = false;
+            let msg = "";
+            if (success) {
+                msg = "Success! You completed " + repsDone + " reps.";
+            } else {
+                msg = "Game Over. You did " + repsDone + " reps.";
+            }
+            if (success) {
+                msg += " Great job!";
+                speakPhrase("Great job " + (playerName ? playerName : "") + "!");
+            } else {
+                msg += " You'll get it next time!";
+                speakPhrase("Good try " + (playerName ? playerName : "") + ", you'll get it next time!");
+            }
+            if (currentHand === "right") {
+                // Store right hand results to send after left is done
+                window.rightSessionTemp = { weight: targetWeight, reps: repsDone };
+                msg += "<br>Now switch to your LEFT hand when you're ready.";
+                msg += "<button id='startLeftBtn'>Start Left Hand</button>";
+            } else {
+                // If left hand done, session complete
+                msg += "<br>All done for today!";
+                // Log result to server (for entire day after left completed)
+            }
+            overlay.innerHTML = "<div class='message'>" + msg + "</div>";
+            overlay.classList.remove('hidden');
+            if (currentHand === "left") {
+                sendSessionResults();
+            } else {
+                const btn = document.getElementById('startLeftBtn');
+                if (btn) {
+                    btn.addEventListener('click', () => {
+                        overlay.classList.add('hidden');
+                        startLeftHandSession();
+                    });
+                }
+            }
+        }
+        
+        // Show a motivational text briefly on screen
+        function showMotivation(text) {
+            motivationDiv.textContent = text;
+            motivationDiv.classList.remove('hidden');
+            setTimeout(() => {
+                motivationDiv.classList.add('hidden');
+            }, 2000);
+        }
+        
+        // Speak a phrase out loud (text-to-speech)
+        function speakPhrase(text) {
+            if ('speechSynthesis' in window) {
+                const utter = new SpeechSynthesisUtterance(text);
+                utter.rate = 1;
+                window.speechSynthesis.speak(utter);
+            }
+        }
+        
+        // Start right-hand session: get mode/weight from server and start countdown
+        function startRightHandSession() {
+            fetch('/api/startSession?hand=right')
+                .then(response => response.json())
+                .then(data => {
+                    currentMode = data.mode;
+                    currentHand = "right";
+                    targetWeight = data.weight;
+                    targetReps = (data.mode === "strength") ? 10 : 20;
+                    playerName = data.name || "";
+                    sessionLabel.textContent = `${data.mode.charAt(0).toUpperCase() + data.mode.slice(1)} Training (${targetWeight} lbs) - Right Hand`;
+                    // startEventSource();
+                    startCountdown(() => {
+                        speakPhrase("Let's go " + (playerName ? playerName : "") + "! You got this!");
+                        startGameLoop();
+                    });
+                });
+        }
+        
+        // Start left-hand session after break
+        function startLeftHandSession() {
+            fetch('/api/startSession?hand=left')
+                .then(response => response.json())
+                .then(data => {
+                    currentHand = "left";
+                    // Mode remains currentMode
+                    targetWeight = data.weight;
+                    sessionLabel.textContent = `${currentMode.charAt(0).toUpperCase() + currentMode.slice(1)} Training (${targetWeight} lbs) - Left Hand`;
+                    repsDone = 0;
+                    pipes = [];
+                    frameCount = 0;
+                    startCountdown(() => {
+                        speakPhrase("Let's go " + (playerName ? playerName : "") + "!");
+                        startGameLoop();
+                    });
+                });
+        }
+        
+        // Display a 3-2-1 countdown, then run the given onComplete callback
+        function startCountdown(onComplete) {
+            let count = 3;
+            overlay.innerHTML = "<div class='countdown'>" + count + "</div>";
+            overlay.classList.remove('hidden');
+            const interval = setInterval(() => {
+                count--;
+                if (count > 0) {
+                    overlay.querySelector('.countdown').textContent = count;
+                } else {
+                    clearInterval(interval);
+                    overlay.classList.add('hidden');
+                    onComplete();
+                }
+            }, 1000);
+        }
+        
+        // Set up server-sent events for hardware rep signals
+        // let eventSource = null;
+        // function startEventSource() {
+        //     if (eventSource) eventSource.close();
+        //     eventSource = new EventSource('/stream');
+        //     eventSource.onmessage = (e) => {
+        //         if (!gameActive) return;
+        //         // Each event indicates a rep (squeeze) occurred
+        //         jump();
+        //         console.log("Jump triggered by hardware signal");
+        //     };
+        // }
+        
+        // Send session results to server after both hands are done
+        function sendSessionResults() {
+            const data = {
+                date: new Date().toISOString().slice(0, 10),
+                mode: currentMode,
+                right_weight: null,
+                right_reps: null,
+                left_weight: targetWeight,
+                left_reps: repsDone
+            };
+            if (window.rightSessionTemp) {
+                data.right_weight = window.rightSessionTemp.weight;
+                data.right_reps = window.rightSessionTemp.reps;
+            } else {
+                return;
+            }
+            fetch('/api/submitResult', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            }).then(response => response.json())
+              .then(result => {
+                  console.log("Log saved:", result);
+              });
+        }
+        
+        // Initial overlay with start button on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            overlay.innerHTML = "<button id='startTrainingBtn'>Start Training</button>";
+            overlay.classList.remove('hidden');
+            document.getElementById('startTrainingBtn').addEventListener('click', () => {
+                overlay.classList.add('hidden');
+                startRightHandSession();
+            });
+        });
+        
+        // Modified key event listener for 'F' key
+        window.addEventListener('keydown', (e) => {
+            if ((e.code === 'KeyF' || e.key === 'f' || e.key === 'F') && gameActive) {
+                jump();
+            }
+            // Keep the original key support for testing
+            if ((e.code === 'KeyA' || e.key === 'a' || e.key === 'A') && gameActive) {
+                jump();
+            }
+        });
+    </script>
+</body>
+</html>
